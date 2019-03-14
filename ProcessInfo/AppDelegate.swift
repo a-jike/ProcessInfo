@@ -16,7 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        print("\(CPU().info())")
+        print("\(CPU().hostBasicInfo())")
+        print("\(System().info())")
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -26,8 +27,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 }
 
-public class CPU {
+public class System {
     public func info() {
+        var info = utsname()
+        uname(&info)
+        let systemInfo = info.machine
+        let machineMirror = Mirror(reflecting: info.machine)
+        let identifier = machineMirror.children.reduce("") { identifier, element in
+            guard let value = element.value as? Int8, value != 0 else { return identifier }
+            return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+        print("\(identifier)")
+    }
+}
+
+public class CPU {
+    public func hostBasicInfo() {
         let HOST_BASIC_INFO_COUNT = MemoryLayout<host_basic_info>.stride/MemoryLayout<integer_t>.stride
         var size = mach_msg_type_number_t(HOST_BASIC_INFO_COUNT)
         let hostInfo = host_basic_info_t.allocate(capacity: 1)
@@ -50,5 +65,27 @@ public class CPU {
 //        public var logical_cpu: integer_t /* number of logical cpu now available */
 //        public var logical_cpu_max: integer_t /* max number of physical CPUs possible */
 //        public var max_mem: UInt64 /* actual size of physical memory */
+    }
+    
+    public func processorInfo() {
+        var pset   = processor_set_name_t()
+        let machHost = mach_host_self()
+        var result = processor_set_default(machHost, &pset)
+        let PROCESSOR_SET_LOAD_INFO_COUNT : mach_msg_type_number_t = UInt32(MemoryLayout<processor_set_load_info_data_t>.size / MemoryLayout<natural_t>.size)
+        var count    = PROCESSOR_SET_LOAD_INFO_COUNT
+        let info_out = processor_set_load_info_t.allocate(capacity: 1)
+        
+        result = info_out.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            processor_set_statistics(pset,
+                                     PROCESSOR_SET_LOAD_INFO,
+                                     $0,
+                                     &count)
+        }
+        
+        
+        // This is isn't mandatory as I understand it, just helps keep the ref
+        // count correct. This is because the port is to the default processor
+        // set which should exist by default as long as the machine is running
+        mach_port_deallocate(mach_task_self_, pset)
     }
 }
